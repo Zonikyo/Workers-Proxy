@@ -4,7 +4,6 @@ export default {
     const query = url.searchParams.get("q");
 
     if (!query) {
-      // Homepage with modern design and search bar
       return new Response(
         `<!DOCTYPE html>
 <html lang="en">
@@ -14,61 +13,47 @@ export default {
   <title>Proxy Search</title>
   <style>
     body {
-      font-family: 'Arial', sans-serif;
-      background-color: #f0f2f5;
-      margin: 0;
+      font-family: sans-serif;
+      background: #f5f5f5;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
+      margin: 0;
     }
-    .container {
+    .search-box {
+      background: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
       text-align: center;
-      background: #fff;
-      padding: 40px;
-      border-radius: 15px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-      width: 100%;
-      max-width: 500px;
-    }
-    h1 {
-      color: #333;
-      font-size: 2rem;
     }
     input[type="text"] {
-      padding: 12px 20px;
-      width: 80%;
-      max-width: 400px;
-      border-radius: 25px;
-      border: 1px solid #ddd;
+      width: 100%;
+      padding: 0.75rem;
+      margin-top: 1rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
       font-size: 1rem;
-      margin-bottom: 20px;
-      outline: none;
-      transition: 0.3s ease;
-    }
-    input[type="text"]:focus {
-      border-color: #4CAF50;
     }
     button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 12px 30px;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
       border: none;
-      border-radius: 25px;
-      cursor: pointer;
-      transition: 0.3s ease;
+      background: #007BFF;
+      color: white;
       font-size: 1rem;
-    }
-    button:hover {
-      background-color: #45a049;
+      margin-top: 1rem;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="search-box">
     <h1>🔎 Proxy Search</h1>
     <form method="GET">
       <input type="text" name="q" placeholder="Enter URL or Search..." />
+      <br />
       <button type="submit">Go</button>
     </form>
   </div>
@@ -78,19 +63,15 @@ export default {
       );
     }
 
-    // Updated URL regex to allow for more flexible matching
     const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*$/.test(query);
 
     let targetUrl: string;
     if (isProbablyUrl) {
-      // It's a URL — normalize and fetch it
       targetUrl = query.startsWith("http") ? query : `https://${query}`;
     } else {
-      // It's a search — go to DuckDuckGo
       targetUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     }
 
-    // Fetch target content
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: {
@@ -98,58 +79,47 @@ export default {
       },
     });
 
+    let contentType = res.headers.get("content-type") || "";
+
+    if (!contentType.includes("text/html")) {
+      // For non-HTML content like images, CSS, JS, just pipe it through
+      return new Response(res.body, {
+        status: res.status,
+        headers: res.headers,
+      });
+    }
+
     let html = await res.text();
 
-    // Rewriting all hrefs to go through the proxy again
-    html = html.replace(/href="(.*?)"/g, (match, href) => {
-      if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) {
-        return match; // leave alone
-      }
+    // Rewrite links, scripts, images, styles, fonts
+    html = html.replace(/(href|src|action)="(.*?)"/g, (match, attr, link) => {
+      if (link.startsWith("#") || link.startsWith("mailto:") || link.startsWith("javascript:")) return match;
 
-      let newHref = href;
-      if (!href.startsWith("http")) {
-        // make relative links absolute
+      let newUrl = link;
+      try {
         const base = new URL(targetUrl);
-        newHref = new URL(href, base).toString();
-      }
+        newUrl = new URL(link, base).toString();
+      } catch (_) {}
 
-      // Rewrite to go through proxy
-      return `href="/?q=${encodeURIComponent(newHref)}"`;
+      return `${attr}="/?q=${encodeURIComponent(newUrl)}"`;
     });
 
-    // Fix for DuckDuckGo 'uddg' parameter: Decode and handle URLs properly
-    html = html.replace(/href="\/\?q=([^"]+)"/g, (match, encodedUrl) => {
-      let decodedUrl = decodeURIComponent(encodedUrl); // Decode once to handle double encoding
+    html = html.replace(/url\(['"]?(.*?)['"]?\)/g, (match, url) => {
+      if (url.startsWith("data:")) return match;
 
-      // If the URL contains 'uddg=', we need to extract and properly decode it
-      if (decodedUrl.includes("uddg=")) {
-        decodedUrl = decodedUrl.replace(/uddg=([^&]+)/, (subMatch, url) => {
-          // Decode the 'uddg' parameter twice if needed
-          let finalUrl = decodeURIComponent(url);
-          return `uddg=${encodeURIComponent(finalUrl)}`;
-        });
-      }
-      
-      return `href="/?q=${encodeURIComponent(decodedUrl)}"`;
+      let newUrl = url;
+      try {
+        const base = new URL(targetUrl);
+        newUrl = new URL(url, base).toString();
+      } catch (_) {}
+
+      return `url('/?q=${encodeURIComponent(newUrl)}')`;
     });
 
-    // Rewriting src attributes for scripts, images, etc., to go through the proxy as well
-    html = html.replace(/(src|href)="(http[^"]+)"/g, (match, attribute, link) => {
-      if (link.startsWith("http")) {
-        return `${attribute}="/?q=${encodeURIComponent(link)}"`;
-      }
-      return match; // leave non-absolute URLs unchanged
-    });
-
-    // Ensure that fonts are loaded through the proxy (if they're loaded via URL)
-    html = html.replace(/(href|src)="(https:\/\/fonts\.googleapis\.com[^\"]+)"/g, (match, attribute, link) => {
-      return `${attribute}="/?q=${encodeURIComponent(link)}"`;
-    });
-
-    // Return the final HTML with the proxy rewrites
     return new Response(html, {
+      status: res.status,
       headers: {
-        "Content-Type": "text/html",
+        "Content-Type": "text/html; charset=UTF-8",
       },
     });
   },
