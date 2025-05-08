@@ -62,6 +62,22 @@ export default {
       return `href="/?q=${encodeURIComponent(newHref)}"`;
     });
 
+    // Inject JavaScript to override all link clicks so they stay in the proxy
+    html += `
+    <script>
+      document.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', (event) => {
+          event.preventDefault(); // prevent default behavior
+          const href = link.getAttribute('href');
+          if (href) {
+            const newUrl = '/?q=' + encodeURIComponent(href);
+            window.location.href = newUrl;
+          }
+        });
+      });
+    </script>
+    `;
+
     return new Response(html, {
       headers: {
         "Content-Type": "text/html",
