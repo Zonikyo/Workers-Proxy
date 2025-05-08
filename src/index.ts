@@ -65,6 +65,24 @@ export default {
     button:hover {
       background: #00acc1;
     }
+    .quick-links {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .quick-links a {
+      padding: 0.5rem 1rem;
+      background: #2e2e2e;
+      border-radius: 8px;
+      color: #fff;
+      text-decoration: none;
+      transition: background 0.3s;
+    }
+    .quick-links a:hover {
+      background: #444;
+    }
   </style>
 </head>
 <body>
@@ -75,6 +93,12 @@ export default {
       <br />
       <button type="submit">Go</button>
     </form>
+    <div class="quick-links">
+      <a href="/?q=https://www.youtube.com">YouTube</a>
+      <a href="/?q=https://www.twitch.tv">Twitch</a>
+      <a href="/?q=https://zonikyo.github.io">Neonwave</a>
+      <a href="/?q=https://zonikyo.com">Zonikyo</a>
+    </div>
   </div>
 </body>
 </html>`,
