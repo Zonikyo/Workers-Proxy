@@ -82,7 +82,7 @@ export default {
       );
     }
 
-    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*$/.test(query);
+    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?(.*)?$/.test(query);
 
     let targetUrl: string;
     if (isProbablyUrl) {
@@ -109,8 +109,14 @@ export default {
 
     let html = await res.text();
 
-    html = html.replace(/(href|src|action)="(.*?)"/g, (match, attr, link) => {
-      if (link.startsWith("#") || link.startsWith("mailto:") || link.startsWith("javascript:")) return match;
+    html = html.replace(/(href|src|action)=["'](.*?)["']/gi, (match, attr, link) => {
+      if (
+        link.startsWith("#") ||
+        link.startsWith("mailto:") ||
+        link.startsWith("javascript:")
+      ) {
+        return match;
+      }
 
       let newUrl = link;
       try {
@@ -121,17 +127,19 @@ export default {
       return `${attr}="/?q=${encodeURIComponent(newUrl)}"`;
     });
 
-    html = html.replace(/url\(['"]?(.*?)['"]?\)/g, (match, url) => {
-      if (url.startsWith("data:")) return match;
+    html = html.replace(/url\(['"]?(.*?)['"]?\)/g, (match, assetUrl) => {
+      if (assetUrl.startsWith("data:")) return match;
 
-      let newUrl = url;
+      let newUrl = assetUrl;
       try {
         const base = new URL(targetUrl);
-        newUrl = new URL(url, base).toString();
+        newUrl = new URL(assetUrl, base).toString();
       } catch (_) {}
 
       return `url('/?q=${encodeURIComponent(newUrl)}')`;
     });
+
+    html = html.replace(/<meta[^>]+http-equiv=["']refresh["'][^>]*>/gi, "");
 
     return new Response(html, {
       status: res.status,
