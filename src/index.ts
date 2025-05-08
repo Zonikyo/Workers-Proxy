@@ -1,10 +1,9 @@
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const pathname = url.pathname;
     const searchQuery = url.searchParams.get("q");
 
-    if (pathname === "/" && !searchQuery) {
+    if (!searchQuery) {
       // Show homepage with search form
       return new Response(
         `<!DOCTYPE html>
@@ -29,30 +28,22 @@ export default {
       );
     }
 
-    if (searchQuery) {
-      // Handle search query (mock for now)
-      return new Response(
-        `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Search Results</title>
-</head>
-<body style="font-family: sans-serif; padding: 2rem;">
-  <h1>🔍 Search Results for: "${searchQuery}"</h1>
-  <p>(This is where your proxy magic or real search results will show.)</p>
-  <a href="/" style="display: inline-block; margin-top: 1rem;">← Back to Home</a>
-</body>
-</html>`,
-        {
-          headers: {
-            "Content-Type": "text/html",
-          },
-        }
-      );
-    }
+    // Proxy to DuckDuckGo search
+    const targetUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
+    const duckRes = await fetch(targetUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0", // Helps bypass bot protection
+      },
+    });
 
-    // 404 fallback
-    return new Response("Not Found", { status: 404 });
+    const duckHtml = await duckRes.text();
+
+    // Return raw DuckDuckGo HTML
+    return new Response(duckHtml, {
+      headers: {
+        "Content-Type": "text/html",
+      },
+    });
   },
 };
