@@ -117,6 +117,18 @@ export default {
       return `href="/?q=${encodeURIComponent(newHref)}"`;
     });
 
+    // Fix for double-encoded URLs, ensure the URL parameters are correctly decoded
+    html = html.replace(/href="\/\?q=([^"]+)"/g, (match, encodedUrl) => {
+      let decodedUrl = decodeURIComponent(encodedUrl);
+      // If the URL has a `uddg` parameter (from DuckDuckGo), decode it once more if needed
+      if (decodedUrl.includes("uddg=")) {
+        decodedUrl = decodedUrl.replace(/uddg=([^&]+)/, (subMatch, url) => {
+          return `uddg=${decodeURIComponent(url)}`;
+        });
+      }
+      return `href="/?q=${encodeURIComponent(decodedUrl)}"`;
+    });
+
     // Rewriting src attributes for scripts, images, etc., to go through the proxy as well
     html = html.replace(/(src|href)="(http[^"]+)"/g, (match, attribute, link) => {
       if (link.startsWith("http")) {
