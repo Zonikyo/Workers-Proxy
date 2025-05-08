@@ -117,15 +117,19 @@ export default {
       return `href="/?q=${encodeURIComponent(newHref)}"`;
     });
 
-    // Fix for double-encoded URLs, ensure the URL parameters are correctly decoded
+    // Fix for DuckDuckGo 'uddg' parameter: Decode and handle URLs properly
     html = html.replace(/href="\/\?q=([^"]+)"/g, (match, encodedUrl) => {
-      let decodedUrl = decodeURIComponent(encodedUrl);
-      // If the URL has a `uddg` parameter (from DuckDuckGo), decode it once more if needed
+      let decodedUrl = decodeURIComponent(encodedUrl); // Decode once to handle double encoding
+
+      // If the URL contains 'uddg=', we need to extract and properly decode it
       if (decodedUrl.includes("uddg=")) {
         decodedUrl = decodedUrl.replace(/uddg=([^&]+)/, (subMatch, url) => {
-          return `uddg=${decodeURIComponent(url)}`;
+          // Decode the 'uddg' parameter twice if needed
+          let finalUrl = decodeURIComponent(url);
+          return `uddg=${encodeURIComponent(finalUrl)}`;
         });
       }
+      
       return `href="/?q=${encodeURIComponent(decodedUrl)}"`;
     });
 
