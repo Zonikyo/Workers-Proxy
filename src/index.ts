@@ -1,87 +1,122 @@
-export default {
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const query = url.searchParams.get("q");
+// Function to rewrite URLs in CSS, JS, and other assets to the proxy domain
+const rewriteLinks = (body: string, baseUrl: string) => {
+  // Regular expressions to match URLs in CSS, JS, images, etc.
+  const linkRegex = /href="(https?:\/\/[^"]+)"/g;
+  const scriptRegex = /src="(https?:\/\/[^"]+)"/g;
+  const imageRegex = /src="(https?:\/\/[^"]+)"/g;
 
-    if (!query) {
-      // Homepage with search bar
-      return new Response(
-        `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Proxy Search</title>
-</head>
-<body style="font-family: sans-serif; padding: 2rem;">
-  <h1>🔎 Proxy Search</h1>
-  <form method="GET">
-    <input type="text" name="q" placeholder="Enter URL or Search..." style="padding: 0.5rem; width: 300px;" />
-    <button type="submit" style="padding: 0.5rem;">Go</button>
-  </form>
-</body>
-</html>`,
-        { headers: { "Content-Type": "text/html" } }
-      );
-    }
+  // Rewrite links
+  body = body.replace(linkRegex, (match, url) => {
+    // If the URL is a full URL (i.e., not already rewritten), rewrite it
+    return match.replace(url, `${baseUrl}${url}`);
+  });
 
-    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*$/.test(query);
+  body = body.replace(scriptRegex, (match, url) => {
+    return match.replace(url, `${baseUrl}${url}`);
+  });
 
-    let targetUrl: string;
-    if (isProbablyUrl) {
-      // It's a URL — normalize and fetch it
-      targetUrl = query.startsWith("http") ? query : `https://${query}`;
-    } else {
-      // It's a search — go to DuckDuckGo
-      targetUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    }
+  body = body.replace(imageRegex, (match, url) => {
+    return match.replace(url, `${baseUrl}${url}`);
+  });
 
-    // Fetch target content
-    const res = await fetch(targetUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
-    });
-
-    let html = await res.text();
-
-    // Rewriting all hrefs to go through the proxy again
-    html = html.replace(/href="(.*?)"/g, (match, href) => {
-      if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) {
-        return match; // leave alone
-      }
-
-      let newHref = href;
-      if (!href.startsWith("http")) {
-        // make relative links absolute
-        const base = new URL(targetUrl);
-        newHref = new URL(href, base).toString();
-      }
-
-      // Rewrite to go through proxy
-      return `href="/?q=${encodeURIComponent(newHref)}"`;
-    });
-
-    // Inject JavaScript to override all link clicks so they stay in the proxy
-    html += `
-    <script>
-      document.querySelectorAll('a').forEach(link => {
-        link.addEventListener('click', (event) => {
-          event.preventDefault(); // prevent default behavior
-          const href = link.getAttribute('href');
-          if (href) {
-            const newUrl = '/?q=' + encodeURIComponent(href);
-            window.location.href = newUrl;
-          }
-        });
-      });
-    </script>
-    `;
-
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html",
-      },
-    });
-  },
+  return body;
 };
+
+// Function to detect if the input is a valid URL
+const isValidUrl = (str: string): boolean => {
+  const pattern = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*/;
+  return pattern.test(str);
+};
+
+// Proxy request handler
+addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  const query = url.searchParams.get('q');
+
+  if (query) {
+    // If it's a search query (e.g., from DuckDuckGo), fetch it
+    event.respondWith(fetch(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`).then(async (response) => {
+      const contentType = response.headers.get('Content-Type');
+
+      if (contentType && contentType.includes('text/html')) {
+        const body = await response.text();
+        const newBody = rewriteLinks(body, url.origin);
+
+        return new Response(newBody, {
+          headers: {
+            'Content-Type': 'text/html; charset=UTF-8',
+            'Cache-Control': 'public, max-age=3600', // Add caching if necessary
+          },
+        });
+      }
+
+      // Return the response as-is for non-HTML content
+      return response;
+    }));
+  } else if (isValidUrl(url.pathname)) {
+    // If the URL path is a valid URL (direct access to a site), fetch the page
+    event.respondWith(fetch(url.pathname).then(async (response) => {
+      const contentType = response.headers.get('Content-Type');
+
+      if (contentType && contentType.includes('text/html')) {
+        const body = await response.text();
+        const newBody = rewriteLinks(body, url.origin);
+
+        return new Response(newBody, {
+          headers: {
+            'Content-Type': 'text/html; charset=UTF-8',
+            'Cache-Control': 'public, max-age=3600', // Add caching if necessary
+          },
+        });
+      }
+
+      // Return the response as-is for non-HTML content
+      return response;
+    }));
+  } else {
+    // If it's not a valid URL or query, return a simple homepage for search input
+    event.respondWith(new Response(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Proxy Search</title>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            input[type="text"] { width: 80%; padding: 10px; font-size: 16px; }
+            button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+            .container { text-align: center; padding: 50px; }
+            .search-result { margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Proxy Search</h1>
+            <input type="text" id="searchInput" placeholder="Enter search term or URL" />
+            <button onclick="search()">Search</button>
+
+            <div class="search-result" id="searchResult"></div>
+          </div>
+
+          <script>
+            function search() {
+              const input = document.getElementById('searchInput').value;
+              let url;
+
+              if (/^https?:\/\//.test(input)) {
+                url = input; // It's a URL, so just use it directly
+              } else {
+                url = '/?q=' + encodeURIComponent(input); // Assume it's a search query
+              }
+
+              window.location.href = url;
+            }
+          </script>
+        </body>
+      </html>
+    `, {
+      headers: { 'Content-Type': 'text/html; charset=UTF-8' }
+    }));
+  }
+});
