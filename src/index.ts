@@ -68,11 +68,14 @@ export default {
     .quick-links {
       display: flex;
       justify-content: space-around;
-      margin-top: 1rem;
+      margin-top: 1.5rem;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 1rem;
     }
     .quick-links a {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       padding: 0.5rem 1rem;
       background: #2e2e2e;
       border-radius: 8px;
@@ -82,6 +85,10 @@ export default {
     }
     .quick-links a:hover {
       background: #444;
+    }
+    .quick-links img {
+      width: 20px;
+      height: 20px;
     }
   </style>
 </head>
@@ -94,10 +101,10 @@ export default {
       <button type="submit">Go</button>
     </form>
     <div class="quick-links">
-      <a href="/?q=https://www.youtube.com">YouTube</a>
-      <a href="/?q=https://www.twitch.tv">Twitch</a>
-      <a href="/?q=https://zonikyo.github.io">Neonwave</a>
-      <a href="/?q=https://zonikyo.com">Zonikyo</a>
+      <a href="/?q=https://www.youtube.com"><img src="https://www.youtube.com/s/desktop/d1e6e8f6/img/favicon.ico" alt="YouTube">YouTube</a>
+      <a href="/?q=https://www.twitch.tv"><img src="https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png" alt="Twitch">Twitch</a>
+      <a href="/?q=https://zonikyo.github.io"><img src="https://zonikyo.github.io/favicon.ico" alt="Neonwave">Neonwave</a>
+      <a href="/?q=https://zonikyo.com"><img src="https://zonikyo.com/favicon.ico" alt="Zonikyo">Zonikyo</a>
     </div>
   </div>
 </body>
@@ -106,7 +113,7 @@ export default {
       );
     }
 
-    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?(.*)?$/.test(query);
+    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*$/.test(query);
 
     let targetUrl: string;
     if (isProbablyUrl) {
