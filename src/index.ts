@@ -24,7 +24,7 @@ export default {
       );
     }
 
-    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}(/.*)?$/.test(query);
+    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*$/.test(query);
 
     let targetUrl: string;
     if (isProbablyUrl) {
