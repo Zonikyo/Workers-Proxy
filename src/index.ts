@@ -13,38 +13,57 @@ export default {
   <title>Proxy Search</title>
   <style>
     body {
-      font-family: sans-serif;
-      background: #f5f5f5;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #121212;
+      color: #fff;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
       margin: 0;
+      animation: fadeIn 1s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
     .search-box {
-      background: white;
+      background: #1e1e1e;
       padding: 2rem;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      border-radius: 20px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
       text-align: center;
+      width: 100%;
+      max-width: 500px;
+      animation: slideUp 0.7s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(40px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
     input[type="text"] {
       width: 100%;
-      padding: 0.75rem;
+      padding: 1rem;
       margin-top: 1rem;
-      border-radius: 8px;
-      border: 1px solid #ccc;
+      border-radius: 12px;
+      border: 1px solid #444;
+      background: #2c2c2c;
+      color: #fff;
       font-size: 1rem;
     }
     button {
       padding: 0.75rem 1.5rem;
-      border-radius: 8px;
+      border-radius: 12px;
       border: none;
-      background: #007BFF;
+      background: #00bcd4;
       color: white;
       font-size: 1rem;
       margin-top: 1rem;
       cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #00acc1;
     }
   </style>
 </head>
@@ -69,7 +88,7 @@ export default {
     if (isProbablyUrl) {
       targetUrl = query.startsWith("http") ? query : `https://${query}`;
     } else {
-      targetUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      targetUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
     }
 
     const res = await fetch(targetUrl, {
@@ -82,7 +101,6 @@ export default {
     let contentType = res.headers.get("content-type") || "";
 
     if (!contentType.includes("text/html")) {
-      // For non-HTML content like images, CSS, JS, just pipe it through
       return new Response(res.body, {
         status: res.status,
         headers: res.headers,
@@ -91,7 +109,6 @@ export default {
 
     let html = await res.text();
 
-    // Rewrite links, scripts, images, styles, fonts
     html = html.replace(/(href|src|action)="(.*?)"/g, (match, attr, link) => {
       if (link.startsWith("#") || link.startsWith("mailto:") || link.startsWith("javascript:")) return match;
 
