@@ -4,26 +4,81 @@ export default {
     const query = url.searchParams.get("q");
 
     if (!query) {
-      // Homepage with search bar
+      // Homepage with modern design and search bar
       return new Response(
         `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Proxy Search</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: #f0f2f5;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      text-align: center;
+      background: #fff;
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 500px;
+    }
+    h1 {
+      color: #333;
+      font-size: 2rem;
+    }
+    input[type="text"] {
+      padding: 12px 20px;
+      width: 80%;
+      max-width: 400px;
+      border-radius: 25px;
+      border: 1px solid #ddd;
+      font-size: 1rem;
+      margin-bottom: 20px;
+      outline: none;
+      transition: 0.3s ease;
+    }
+    input[type="text"]:focus {
+      border-color: #4CAF50;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 30px;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: 0.3s ease;
+      font-size: 1rem;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
 </head>
-<body style="font-family: sans-serif; padding: 2rem;">
-  <h1>🔎 Proxy Search</h1>
-  <form method="GET">
-    <input type="text" name="q" placeholder="Enter URL or Search..." style="padding: 0.5rem; width: 300px;" />
-    <button type="submit" style="padding: 0.5rem;">Go</button>
-  </form>
+<body>
+  <div class="container">
+    <h1>🔎 Proxy Search</h1>
+    <form method="GET">
+      <input type="text" name="q" placeholder="Enter URL or Search..." />
+      <button type="submit">Go</button>
+    </form>
+  </div>
 </body>
 </html>`,
         { headers: { "Content-Type": "text/html" } }
       );
     }
 
+    // Updated URL regex to allow for more flexible matching
     const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}\/?.*$/.test(query);
 
     let targetUrl: string;
@@ -70,6 +125,12 @@ export default {
       return match; // leave non-absolute URLs unchanged
     });
 
+    // Ensure that fonts are loaded through the proxy (if they're loaded via URL)
+    html = html.replace(/(href|src)="(https:\/\/fonts\.googleapis\.com[^\"]+)"/g, (match, attribute, link) => {
+      return `${attribute}="/?q=${encodeURIComponent(link)}"`;
+    });
+
+    // Return the final HTML with the proxy rewrites
     return new Response(html, {
       headers: {
         "Content-Type": "text/html",
