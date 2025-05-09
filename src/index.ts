@@ -29,7 +29,7 @@ export default {
     }
     .search-box {
       background: #1e1e1e;
-      padding: 2rem;
+      padding: 0rem;
       border-radius: 20px;
       box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
       text-align: center;
@@ -50,6 +50,7 @@ export default {
       background: #2c2c2c;
       color: #fff;
       font-size: 1rem;
+      
     }
     button {
       padding: 0.75rem 1.5rem;
