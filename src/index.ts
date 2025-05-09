@@ -251,7 +251,6 @@ export default {
 
   contentFrame.addEventListener('load', () => {
     const currentLoadedProxiedUrl = contentFrame.src;
-    // Avoid processing if it's not a proxied URL or about:blank
     if (currentLoadedProxiedUrl === 'about:blank' || !currentLoadedProxiedUrl.startsWith(window.location.origin + '/?q=')) {
         updateNavButtons(); 
         return;
@@ -262,7 +261,6 @@ export default {
         const frameUrl = new URL(currentLoadedProxiedUrl, window.location.origin); 
         displayedQuery = frameUrl.searchParams.get('q') || '';
     } catch (e) {
-        // Fallback parsing if URL constructor fails (should be rare with full URLs)
         const qIndex = currentLoadedProxiedUrl.indexOf('/?q=');
         if (qIndex !== -1) {
             displayedQuery = decodeURIComponent(currentLoadedProxiedUrl.substring(qIndex + 5));
@@ -270,18 +268,15 @@ export default {
     }
     urlBarBrowserView.value = displayedQuery;
     
-    // Update history only if the loaded URL is genuinely new and different from the current history top.
     if (historyStack[historyIndex] !== currentLoadedProxiedUrl) {
         if (historyIndex < historyStack.length - 1) { 
             historyStack = historyStack.slice(0, historyIndex + 1);
         }
-        // Check if it's a distinct navigation, not just a reload of the same page
         if (historyStack.length === 0 || historyStack[historyStack.length -1] !== currentLoadedProxiedUrl) {
              historyStack.push(currentLoadedProxiedUrl);
              historyIndex = historyStack.length - 1;
         } else if (historyStack[historyStack.length -1] === currentLoadedProxiedUrl && historyIndex !== historyStack.length -1) {
-            // This case handles if we went back, and then the 'load' event fires for that page again.
-            historyIndex = historyStack.indexOf(currentLoadedProxiedUrl); // Point historyIndex to the reloaded page
+            historyIndex = historyStack.indexOf(currentLoadedProxiedUrl);
         }
     }
     updateNavButtons();
@@ -294,7 +289,6 @@ export default {
     if (!browserViewSection.classList.contains('hidden')) {
       const controlsHeight = browserControls.offsetHeight;
       const marginBottomControls = parseInt(window.getComputedStyle(browserControls).marginBottom);
-      // Consider body padding as well for accurate calculation
       const bodyVerticalPadding = parseInt(window.getComputedStyle(document.body).paddingTop) + parseInt(window.getComputedStyle(document.body).paddingBottom);
       contentFrame.style.height = \`calc(100vh - \${controlsHeight + marginBottomControls + bodyVerticalPadding}px)\`;
     }
@@ -333,37 +327,92 @@ export default {
     }
 
     try {
-        const targetUrl = new URL(targetUrlString); // Use URL object for easier origin access
+        const targetUrl = new URL(targetUrlString); 
+        const baseProxyUrl = `${url.protocol}//${url.host}/?q=`;
 
+        // Fetch the target resource
         const res = await fetch(targetUrl.toString(), {
-          method: "GET",
-          headers: {
+          method: request.method, // Use the original request method
+          headers: { // Pass through certain headers, modify others
+            ...request.headers, // Start with original request headers
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
             "Accept-Language": "en-US,en;q=0.9",
-            "Referer": targetUrl.origin + '/', 
+            "Referer": targetUrl.origin + '/', // Set a plausible referer
+            "Host": targetUrl.host, // Set the Host header to the target's host
+            // Remove headers that might cause issues or reveal proxying
+            "X-Forwarded-For": "",
+            "X-Forwarded-Host": "",
+            "X-Forwarded-Proto": "",
           },
+          body: request.method === 'POST' || request.method === 'PUT' ? request.body : undefined, // Pass body for POST/PUT
+          redirect: 'manual', // Handle redirects manually to rewrite Location header
         });
 
-        let contentType = res.headers.get("content-type") || "";
+        // Handle redirects
+        if (res.status >= 300 && res.status < 400 && res.headers.has("location")) {
+            let redirectedLocation = res.headers.get("location")!;
+            try {
+                // Resolve relative redirect locations against the target URL
+                redirectedLocation = new URL(redirectedLocation, targetUrl).toString();
+            } catch (_) {
+                // If it's already absolute or malformed, use as is
+            }
+            const proxiedRedirectUrl = `${baseProxyUrl}${encodeURIComponent(redirectedLocation)}`;
+            return new Response(null, {
+                status: res.status,
+                headers: {
+                    ...res.headers, // Pass through original redirect headers
+                    "Location": proxiedRedirectUrl,
+                }
+            });
+        }
+        
+        // Clone headers to make them modifiable
+        const responseHeaders = new Headers(res.headers);
 
+        // Rewrite Set-Cookie headers
+        const newCookies: string[] = [];
+        if (responseHeaders.has("set-cookie")) {
+            const originalCookies = responseHeaders.raw()['set-cookie'] || []; // Get raw array of cookie strings
+            originalCookies.forEach(cookieStr => {
+                let newCookie = cookieStr.replace(/Domain=[^;]+;?/i, ""); // Remove original domain
+                newCookie = newCookie.replace(/Path=[^;]+;?/i, "Path=/;"); // Set path to root of proxy
+                // newCookie = newCookie.replace(/Secure;?/i, ""); // Optional: Remove Secure if proxy is HTTP
+                newCookies.push(newCookie);
+            });
+            responseHeaders.delete("set-cookie"); // Remove original Set-Cookie headers
+            newCookies.forEach(nc => responseHeaders.append("set-cookie", nc)); // Add modified ones
+        }
+        
+        // Remove problematic security headers from the target that might block proxying
+        responseHeaders.delete("content-security-policy"); // Will add our own later
+        responseHeaders.delete("content-security-policy-report-only");
+        responseHeaders.delete("x-frame-options");
+        responseHeaders.delete("x-content-type-options"); // Usually 'nosniff', can be kept but sometimes problematic
+
+        // Add our own CSP
+        responseHeaders.set("Content-Security-Policy", "frame-ancestors *; upgrade-insecure-requests;");
+
+
+        let contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("text/html")) {
           return new Response(res.body, {
             status: res.status,
-            headers: res.headers,
+            statusText: res.statusText,
+            headers: responseHeaders, // Use modified headers
           });
         }
 
         let html = await res.text();
-        const baseProxyUrl = `${url.protocol}//${url.host}/?q=`;
 
-        // Function to resolve a URL against the target page's URL and then proxy it
         const resolveAndProxyUrl = (linkUrl: string, base: URL): string => {
             if (
                 linkUrl.startsWith("#") ||
                 linkUrl.startsWith("mailto:") ||
-                linkUrl.startsWith("javascript:") || // Be cautious with JS links
-                linkUrl.startsWith("data:")
+                linkUrl.startsWith("javascript:") ||
+                linkUrl.startsWith("data:") ||
+                linkUrl.startsWith("blob:") // Allow blob URLs as they are same-origin
             ) {
                 return linkUrl;
             }
@@ -371,24 +420,36 @@ export default {
                 const absoluteUrl = new URL(linkUrl, base).toString();
                 return `${baseProxyUrl}${encodeURIComponent(absoluteUrl)}`;
             } catch (_) {
-                // If it's a malformed URL or some other scheme, try to proxy as is, or return original
                 return `${baseProxyUrl}${encodeURIComponent(linkUrl)}`; 
             }
         };
         
-        // Rewrite attributes like href, src, action, poster, data
-        html = html.replace(/(href|src|action|poster|data)=["'](.*?)["']/gi, (match, attr, link) => {
+        // Remove integrity and nonce attributes first
+        html = html.replace(/\s+integrity=["'][^"']*["']/gi, "");
+        html = html.replace(/\s+nonce=["'][^"']*["']/gi, "");
+
+        // Rewrite attributes like href, src, action, poster, data, formaction, background, cite
+        html = html.replace(/(href|src|action|poster|data|formaction|background|cite)=["'](.*?)["']/gi, (match, attr, link) => {
           return `${attr}="${resolveAndProxyUrl(link, targetUrl)}"`;
         });
 
-        // Rewrite URLs in CSS url(...)
-        html = html.replace(/url\s*\(\s*['"]?(.*?)['"]?\s*\)/gi, (match, assetUrl) => {
-          return `url('${resolveAndProxyUrl(assetUrl, targetUrl)}')`;
+        // Rewrite URLs in inline style="..." attributes
+        html = html.replace(/style=(["'])([^"']+?)\1/gi, (match, quote, styleContent) => {
+            const newStyleContent = styleContent.replace(/url\s*\(\s*['"]?(.*?)['"]?\s*\)/gi, (urlMatch: string, assetUrl: string) => {
+                return `url('${resolveAndProxyUrl(assetUrl, targetUrl)}')`;
+            });
+            return `style=${quote}${newStyleContent}${quote}`;
         });
         
-        // Rewrite CSS @import "..."
-        html = html.replace(/@import\s+['"](.*?)['"]/gi, (match, importUrl) => {
-            return `@import "${resolveAndProxyUrl(importUrl, targetUrl)}"`;
+        // Rewrite URLs in <style>...</style> tags
+        html = html.replace(/<style([^>]*)>([\s\S]*?)<\/style>/gi, (match, styleAttrs, styleContent) => {
+            let newStyleContent = styleContent.replace(/@import\s+['"](.*?)['"]/gi, (_: string, importUrl: string) => {
+                return `@import "${resolveAndProxyUrl(importUrl, targetUrl)}"`;
+            });
+            newStyleContent = newStyleContent.replace(/url\s*\(\s*['"]?(.*?)['"]?\s*\)/gi, (_: string, assetUrl: string) => {
+                return `url('${resolveAndProxyUrl(assetUrl, targetUrl)}')`;
+            });
+            return `<style${styleAttrs}>${newStyleContent}</style>`;
         });
 
         // Rewrite srcset attributes
@@ -403,41 +464,33 @@ export default {
             return `srcset="${newSrcset}"`;
         });
 
-        // Remove meta refresh tags that might redirect away
         html = html.replace(/<meta[^>]+http-equiv=["']refresh["'][^>]*>/gi, "");
 
-        // Inject a <base> tag. The base href should be the proxied version of the *directory* of the target URL.
         let effectiveBaseHref;
         try {
-            // Get the URL as if resolving '.' relative to the target URL.
-            // This correctly handles cases where targetUrl is a file (e.g., page.html) or a directory.
             effectiveBaseHref = new URL('.', targetUrl).href;
         } catch {
-            effectiveBaseHref = targetUrl.toString(); // Fallback
+            effectiveBaseHref = targetUrl.toString(); 
         }
         const proxiedBaseForTag = `${baseProxyUrl}${encodeURIComponent(effectiveBaseHref)}`;
 
         if (!/<head[^>]*>/i.test(html)) {
-            html = "<head></head>" + html; // Ensure head exists
+            html = "<head></head>" + html; 
         }
-        // Remove any existing base tag first, then add ours.
         html = html.replace(/<base[^>]*>/gi, ""); 
         html = html.replace(/<head[^>]*>/i, `$&<base href="${proxiedBaseForTag}">`);
 
+        responseHeaders.set("Content-Type", "text/html; charset=UTF-8");
 
         return new Response(html, {
           status: res.status,
-          headers: {
-            "Content-Type": "text/html; charset=UTF-8",
-            "Content-Security-Policy": "frame-ancestors *; upgrade-insecure-requests;", 
-            "X-Frame-Options": "", // Allow framing
-          },
+          statusText: res.statusText,
+          headers: responseHeaders, // Use modified headers
         });
 
     } catch (e: any) {
-        // Ensure targetUrlString is defined for the error message
         const displayUrl = targetUrlString || query;
-        return new Response(`Error fetching or processing URL: ${e.message} for target: ${displayUrl}`, { status: 500 });
+        return new Response(`Proxy Error: ${e.message} for target: ${displayUrl}. Check if the URL is correct and the server is reachable.`, { status: 502 });
     }
   },
 };
