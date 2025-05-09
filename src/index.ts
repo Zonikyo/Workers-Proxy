@@ -19,21 +19,23 @@ export default {
       font-family: 'Inter', sans-serif;
       animation: fadeIn 0.8s ease-out forwards;
       scrollbar-width: thin;
-      scrollbar-color: #4B5563 #1F2937;
+      scrollbar-color: #4B5563 #1F2937; /* thumb track - For Firefox */
     }
+    /* For Webkit-based browsers (Chrome, Safari, Edge) */
     body::-webkit-scrollbar { width: 8px; }
-    body::-webkit-scrollbar-track { background: #1F2937; }
+    body::-webkit-scrollbar-track { background: #1F2937; /* bg-gray-800 */ }
     body::-webkit-scrollbar-thumb {
-      background-color: #4B5563;
+      background-color: #4B5563; /* bg-gray-600 */
       border-radius: 20px;
-      border: 2px solid #1F2937;
+      border: 2px solid #1F2937; /* bg-gray-800 - creates padding around thumb */
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes subtleSlideUp { from { transform: translateY(25px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     
+    /* Apply animation and initial opacity to both sections */
     #initialSearchSection, #browserViewSection {
       animation: subtleSlideUp 0.7s ease-out 0.2s forwards;
-      opacity: 0;
+      opacity: 0; /* Start hidden for animation */
     }
     .quick-link-item:focus-visible, .browser-control-button:focus-visible, #mainSearchBtn:focus-visible, #mainOpenInNewTabBtn:focus-visible, #urlBarBrowserView:focus-visible {
         outline: 2px solid #3B82F6; /* Tailwind's blue-500 */
@@ -41,14 +43,17 @@ export default {
     }
     #contentFrame {
       width: 100%;
-      height: calc(100vh - 120px); /* Adjusted height for controls */
+      /* Adjusted height: 100vh - (approx height of browserControls + its margin) */
+      /* browserControls: p-2 (top/bottom 0.5rem*2=1rem) + mb-3 (0.75rem) + button/input height (approx 2.5rem for p-2 inputs) */
+      /* Total approx: 1rem + 0.75rem + 2.5rem = 4.25rem = 68px. Let's use 76px for a bit more buffer. */
+      height: calc(100vh - 76px); 
       border: 1px solid #374151; /* bg-gray-700 */
       border-radius: 0.375rem; /* rounded-md */
     }
     .hidden { display: none !important; }
   </style>
 </head>
-<body class="bg-gray-900 text-gray-100 flex flex-col items-center min-h-screen p-4 selection:bg-blue-600 selection:text-white overflow-hidden">
+<body class="bg-gray-900 text-gray-100 flex flex-col items-center justify-center min-h-screen p-4 selection:bg-blue-600 selection:text-white overflow-x-hidden">
 
   <div id="initialSearchSection" class="w-full max-w-lg text-center">
     <h1 class="text-5xl sm:text-6xl font-extrabold mb-8">
@@ -109,8 +114,8 @@ export default {
     </div>
   </div>
 
-  <div id="browserViewSection" class="w-full max-w-screen-xl hidden">
-    <div id="browserControls" class="flex items-center gap-2 p-2 mb-3 bg-gray-800 rounded-lg shadow-md">
+  <div id="browserViewSection" class="w-full hidden"> {/* Removed max-w-screen-xl */}
+    <div id="browserControls" class="flex items-center gap-2 p-2 mb-3 bg-gray-800 rounded-lg shadow-md sticky top-0 z-20"> {/* Added sticky top for controls */}
       <button id="homeBtn" title="Back to Search Home" class="browser-control-button p-2 bg-gray-700 hover:bg-gray-600 rounded-md text-gray-300 transition-colors">🏠</button>
       <button id="backBtn" title="Back" class="browser-control-button p-2 bg-gray-700 hover:bg-gray-600 rounded-md text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">⬅️</button>
       <button id="forwardBtn" title="Forward" class="browser-control-button p-2 bg-gray-700 hover:bg-gray-600 rounded-md text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">➡️</button>
@@ -138,6 +143,8 @@ export default {
   const urlBarBrowserView = document.getElementById('urlBarBrowserView');
   const openInNewTabBrowserView = document.getElementById('openInNewTabBrowserView');
   const contentFrame = document.getElementById('contentFrame');
+  const browserControls = document.getElementById('browserControls');
+
 
   let historyStack = [];
   let historyIndex = -1;
@@ -153,28 +160,29 @@ export default {
     if (newWindow) {
       newWindow.location.href = proxiedUrl;
     } else {
-      alert('Popup blocked. Please allow popups for this site.');
+      // Changed alert to a more user-friendly message box if possible, or console log for now
+      console.warn('Popup blocked. Please allow popups for this site to open in a new tab.');
+      // You could implement a custom modal here instead of alert.
+      // For simplicity, we'll leave it as a console warning to avoid intrusive alerts.
     }
   }
   
   function loadInBrowser(proxiedUrl, originalQuery) {
     initialSearchSection.classList.add('hidden');
     browserViewSection.classList.remove('hidden');
-    browserViewSection.style.opacity = '1'; // Ensure it's visible after animation class is added
+    browserViewSection.style.opacity = '1'; // Ensure it's visible
 
     contentFrame.src = proxiedUrl;
-    urlBarBrowserView.value = originalQuery; // Show the original user input
+    urlBarBrowserView.value = originalQuery; 
 
-    // Manage history
     if (historyStack[historyIndex] !== proxiedUrl) {
-        historyStack = historyStack.slice(0, historyIndex + 1); // Clear forward history if new navigation
+        historyStack = historyStack.slice(0, historyIndex + 1); 
         historyStack.push(proxiedUrl);
         historyIndex++;
     }
     updateNavButtons();
   }
 
-  // Event listener for the main search form on the homepage
   mainSearchForm.addEventListener('submit', (event) => {
     event.preventDefault();
     const query = mainSearchInput.value.trim();
@@ -183,7 +191,6 @@ export default {
     loadInBrowser(proxiedUrl, query);
   });
 
-  // Event listener for "Open in New Tab" on the homepage
   mainOpenInNewTabBtn.addEventListener('click', () => {
     const query = mainSearchInput.value.trim();
     if (!query) return;
@@ -191,18 +198,15 @@ export default {
     openInNewTab(proxiedUrl);
   });
   
-  // Quick links handler (global function called by onclick)
   window.loadInBrowser = loadInBrowser;
 
 
-  // Browser view controls
   homeBtn.addEventListener('click', () => {
     browserViewSection.classList.add('hidden');
     initialSearchSection.classList.remove('hidden');
     initialSearchSection.style.opacity = '1';
-    mainSearchInput.value = ''; // Clear homepage search input
-    // Optionally clear iframe and history
-    // contentFrame.src = 'about:blank';
+    mainSearchInput.value = ''; 
+    // contentFrame.src = 'about:blank'; // Optionally clear iframe
     // historyStack = [];
     // historyIndex = -1;
     // updateNavButtons();
@@ -213,7 +217,6 @@ export default {
       historyIndex--;
       const targetProxiedUrl = historyStack[historyIndex];
       contentFrame.src = targetProxiedUrl;
-      // Update URL bar with the 'q' param from the proxied URL
       try {
         const urlParams = new URL(targetProxiedUrl, window.location.origin).searchParams;
         urlBarBrowserView.value = urlParams.get('q') || '';
@@ -241,7 +244,8 @@ export default {
 
   reloadBtn.addEventListener('click', () => {
     if (contentFrame.src && contentFrame.src !== 'about:blank') {
-      contentFrame.src = contentFrame.src; // Simple reload
+      // contentFrame.src = contentFrame.src; // This sometimes doesn't bust cache effectively
+      contentFrame.contentWindow.location.reload(true); // Force reload from server
     }
   });
 
@@ -250,8 +254,9 @@ export default {
     const newQuery = urlBarBrowserView.value.trim();
     if (!newQuery) return;
     const newProxiedUrl = '/?q=' + encodeURIComponent(newQuery);
-    contentFrame.src = newProxiedUrl; // This will trigger iframe.onload
+    // contentFrame.src = newProxiedUrl; // This will trigger iframe.onload
     // History will be updated in iframe.onload
+    loadInBrowser(newProxiedUrl, newQuery); // Use loadInBrowser to manage history consistently
   });
 
   openInNewTabBrowserView.addEventListener('click', () => {
@@ -260,22 +265,24 @@ export default {
   });
 
   contentFrame.addEventListener('load', () => {
-    // This event fires when the iframe content has loaded.
-    // The src of the iframe is the /?q=... URL.
     const currentLoadedProxiedUrl = contentFrame.src;
-    if (currentLoadedProxiedUrl === 'about:blank') {
-        updateNavButtons(); // Ensure buttons are correct if iframe is blanked
+    if (currentLoadedProxiedUrl === 'about:blank' || !currentLoadedProxiedUrl.startsWith(window.location.origin + '/?q=')) {
+        // If it's about:blank or not a proxied URL (e.g. internal iframe navigation before proxying kicks in),
+        // don't try to parse 'q' or update history in the same way.
+        // This can happen if the iframe navigates to a non-proxied page internally for a moment.
+        // We might want to leave the URL bar as is, or clear it if it's truly blank.
+        if (currentLoadedProxiedUrl === 'about:blank') {
+            // urlBarBrowserView.value = ''; // Optionally clear if you want
+        }
+        updateNavButtons(); 
         return;
     }
 
-    // Update URL bar with the actual 'q' parameter from the iframe's src
     let displayedQuery = '';
     try {
-        // Use URL constructor to reliably parse the 'q' parameter from the iframe's src
-        const frameUrl = new URL(currentLoadedProxiedUrl, window.location.origin); // Provide base if src is relative
+        const frameUrl = new URL(currentLoadedProxiedUrl, window.location.origin); 
         displayedQuery = frameUrl.searchParams.get('q') || '';
     } catch (e) {
-        // Fallback for parsing, though should ideally not be needed with full URLs in src
         const qIndex = currentLoadedProxiedUrl.indexOf('/?q=');
         if (qIndex !== -1) {
             displayedQuery = decodeURIComponent(currentLoadedProxiedUrl.substring(qIndex + 5));
@@ -283,23 +290,56 @@ export default {
     }
     urlBarBrowserView.value = displayedQuery;
     
-    // Update history if the loaded URL is different from the current top of the stack
-    // or if it's a new navigation not initiated by back/forward buttons
+    // Only update history if the loaded URL is genuinely new and different from the current history top.
+    // This check is important because 'load' can fire multiple times or for sub-resources in some cases.
     if (historyStack[historyIndex] !== currentLoadedProxiedUrl) {
-        // If current history index is not at the end, it means we navigated back then to a new page
-        if (historyIndex < historyStack.length - 1) {
+        if (historyIndex < historyStack.length - 1) { // Navigated back, then to a new page
             historyStack = historyStack.slice(0, historyIndex + 1);
         }
-        historyStack.push(currentLoadedProxiedUrl);
-        historyIndex = historyStack.length - 1;
+        // Check if it's a distinct navigation, not just a reload of the same page
+        if (historyStack.length === 0 || historyStack[historyStack.length -1] !== currentLoadedProxiedUrl) {
+             historyStack.push(currentLoadedProxiedUrl);
+             historyIndex = historyStack.length - 1;
+        } else if (historyStack[historyStack.length -1] === currentLoadedProxiedUrl && historyIndex !== historyStack.length -1) {
+            // This case handles if we went back, and then the 'load' event fires for that page again.
+            // We should ensure historyIndex points to this reloaded page.
+            historyIndex = historyStack.indexOf(currentLoadedProxiedUrl);
+        }
     }
     updateNavButtons();
   });
   
-  // Initial state for nav buttons
+  // Initial setup
   updateNavButtons();
-  // Show initial search section by default after initial animations
-  initialSearchSection.style.opacity = '1';
+  initialSearchSection.style.opacity = '1'; // Make initial section visible after JS loads
+
+  // Adjust iframe height dynamically if browser controls height changes (e.g., due to window resize affecting text wrapping)
+  // This is a more robust way to handle the iframe height.
+  const resizeObserver = new ResizeObserver(() => {
+    if (!browserViewSection.classList.contains('hidden')) {
+      const controlsHeight = browserControls.offsetHeight;
+      const marginBottomControls = parseInt(window.getComputedStyle(browserControls).marginBottom);
+      contentFrame.style.height = \`calc(100vh - \${controlsHeight + marginBottomControls}px - \${parseInt(window.getComputedStyle(document.body).paddingTop) * 2}px)\`;
+    }
+  });
+  resizeObserver.observe(browserControls);
+  // Also adjust on initial load of browser view
+  const initialBrowserViewObserver = new MutationObserver((mutationsList, observer) => {
+    for(const mutation of mutationsList) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            if (!browserViewSection.classList.contains('hidden')) {
+                const controlsHeight = browserControls.offsetHeight;
+                const marginBottomControls = parseInt(window.getComputedStyle(browserControls).marginBottom);
+                // Body padding (p-4 means 1rem top/bottom, so 1rem * 2 total vertical padding)
+                const bodyVerticalPadding = parseInt(window.getComputedStyle(document.body).paddingTop) + parseInt(window.getComputedStyle(document.body).paddingBottom);
+                contentFrame.style.height = \`calc(100vh - \${controlsHeight + marginBottomControls + bodyVerticalPadding}px)\`;
+                // observer.disconnect(); // Optional: disconnect if only needed once after shown
+            }
+        }
+    }
+  });
+  initialBrowserViewObserver.observe(browserViewSection, { attributes: true });
+
 
 </script>
 </body>
@@ -309,13 +349,12 @@ export default {
     }
 
     // Server-side proxy logic (if query is present)
-    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}(\S*)?$/.test(query); // Regex allows paths/queries
+    const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}(\S*)?$/.test(query); 
 
     let targetUrl: string;
     if (isProbablyUrl) {
       targetUrl = query.startsWith("http://") || query.startsWith("https://") ? query : `https://${query}`;
     } else {
-      // This is for search queries, use Yahoo as per original logic
       targetUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
     }
 
@@ -326,7 +365,7 @@ export default {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
             "Accept-Language": "en-US,en;q=0.9",
-            "Referer": new URL(targetUrl).origin + '/', // Set a generic referer
+            "Referer": new URL(targetUrl).origin + '/', 
           },
         });
 
@@ -342,7 +381,6 @@ export default {
         let html = await res.text();
         const baseProxyUrl = `${url.protocol}//${url.host}/?q=`;
 
-        // Rewrite URLs in HTML attributes (href, src, action)
         html = html.replace(/(href|src|action)=["'](.*?)["']/gi, (match, attr, link) => {
           if (
             link.startsWith("#") ||
@@ -358,12 +396,11 @@ export default {
             const absoluteUrl = new URL(link, targetUrl).toString();
             newUrlStr = absoluteUrl;
           } catch (_) {
-            // If it's not a valid URL or already absolute, use as is (will be prefixed by baseProxyUrl)
+            //
           }
           return `${attr}="${baseProxyUrl}${encodeURIComponent(newUrlStr)}"`;
         });
 
-        // Rewrite URLs in CSS url()
         html = html.replace(/url\s*\(\s*['"]?(.*?)['"]?\s*\)/gi, (match, assetUrl) => {
           if (assetUrl.startsWith("data:") || assetUrl.startsWith("#")) return match;
 
@@ -372,12 +409,11 @@ export default {
             const absoluteAssetUrl = new URL(assetUrl, targetUrl).toString();
             newAssetUrlStr = absoluteAssetUrl;
           } catch (_) {
-            // Use as is
+            //
           }
           return `url('${baseProxyUrl}${encodeURIComponent(newAssetUrlStr)}')`;
         });
         
-        // Rewrite srcset attributes
         html = html.replace(/srcset=["'](.*?)["']/gi, (match, srcsetLinks) => {
             const newSrcset = srcsetLinks.split(',').map(part => {
                 const item = part.trim().split(/\s+/);
@@ -396,7 +432,6 @@ export default {
 
         html = html.replace(/<meta[^>]+http-equiv=["']refresh["'][^>]*>/gi, "");
 
-        // Inject a base tag. The base href should be the proxied version of the target URL's base.
         let baseHrefForTag = targetUrl;
         try {
             const targetBase = new URL(targetUrl);
@@ -408,7 +443,6 @@ export default {
         if (!/<head[^>]*>/i.test(html)) {
             html = "<head></head>" + html;
         }
-        // Ensure base tag is first in head for best effect, or at least present
         if (html.includes("<base")) {
              html = html.replace(/<base[^>]*>/i, `<base href="${proxiedBaseHref}">`);
         } else {
@@ -420,8 +454,8 @@ export default {
           status: res.status,
           headers: {
             "Content-Type": "text/html; charset=UTF-8",
-            "Content-Security-Policy": "frame-ancestors *;", // Allow embedding in iframe from any origin
-            "X-Frame-Options": "", // Allow framing
+            "Content-Security-Policy": "frame-ancestors *; upgrade-insecure-requests;", 
+            "X-Frame-Options": "", 
           },
         });
 
