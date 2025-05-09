@@ -332,28 +332,26 @@ export default {
 
         // Fetch the target resource
         const res = await fetch(targetUrl.toString(), {
-          method: request.method, // Use the original request method
-          headers: { // Pass through certain headers, modify others
-            ...request.headers, // Start with original request headers
+          method: request.method, 
+          headers: { 
+            ...request.headers, 
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
             "Accept-Language": "en-US,en;q=0.9",
-            "Referer": targetUrl.origin + '/', // Set a plausible referer
-            "Host": targetUrl.host, // Set the Host header to the target's host
-            // Remove headers that might cause issues or reveal proxying
+            "Referer": targetUrl.origin + '/', 
+            "Host": targetUrl.host, 
             "X-Forwarded-For": "",
             "X-Forwarded-Host": "",
             "X-Forwarded-Proto": "",
           },
-          body: request.method === 'POST' || request.method === 'PUT' ? request.body : undefined, // Pass body for POST/PUT
-          redirect: 'manual', // Handle redirects manually to rewrite Location header
+          body: request.method === 'POST' || request.method === 'PUT' ? request.body : undefined, 
+          redirect: 'manual', 
         });
 
         // Handle redirects
         if (res.status >= 300 && res.status < 400 && res.headers.has("location")) {
             let redirectedLocation = res.headers.get("location")!;
             try {
-                // Resolve relative redirect locations against the target URL
                 redirectedLocation = new URL(redirectedLocation, targetUrl).toString();
             } catch (_) {
                 // If it's already absolute or malformed, use as is
@@ -362,36 +360,36 @@ export default {
             return new Response(null, {
                 status: res.status,
                 headers: {
-                    ...res.headers, // Pass through original redirect headers
+                    ...res.headers, 
                     "Location": proxiedRedirectUrl,
                 }
             });
         }
         
-        // Clone headers to make them modifiable
         const responseHeaders = new Headers(res.headers);
 
         // Rewrite Set-Cookie headers
         const newCookies: string[] = [];
-        if (responseHeaders.has("set-cookie")) {
-            const originalCookies = responseHeaders.raw()['set-cookie'] || []; // Get raw array of cookie strings
+        // Use getSetCookie() for environments that support it (like Cloudflare Workers)
+        const originalCookies = responseHeaders.getSetCookie(); // This returns an array of cookie strings.
+
+        if (originalCookies && originalCookies.length > 0) {
             originalCookies.forEach(cookieStr => {
-                let newCookie = cookieStr.replace(/Domain=[^;]+;?/i, ""); // Remove original domain
-                newCookie = newCookie.replace(/Path=[^;]+;?/i, "Path=/;"); // Set path to root of proxy
-                // newCookie = newCookie.replace(/Secure;?/i, ""); // Optional: Remove Secure if proxy is HTTP
+                let newCookie = cookieStr.replace(/Domain=[^;]+;?/i, ""); 
+                newCookie = newCookie.replace(/Path=[^;]+;?/i, "Path=/;"); 
+                // Consider if Secure flag needs to be stripped if proxy is not HTTPS
+                // newCookie = newCookie.replace(/Secure;?/i, ""); 
                 newCookies.push(newCookie);
             });
-            responseHeaders.delete("set-cookie"); // Remove original Set-Cookie headers
-            newCookies.forEach(nc => responseHeaders.append("set-cookie", nc)); // Add modified ones
+            responseHeaders.delete("set-cookie"); 
+            newCookies.forEach(nc => responseHeaders.append("set-cookie", nc));
         }
         
-        // Remove problematic security headers from the target that might block proxying
-        responseHeaders.delete("content-security-policy"); // Will add our own later
+        responseHeaders.delete("content-security-policy"); 
         responseHeaders.delete("content-security-policy-report-only");
         responseHeaders.delete("x-frame-options");
-        responseHeaders.delete("x-content-type-options"); // Usually 'nosniff', can be kept but sometimes problematic
+        responseHeaders.delete("x-content-type-options"); 
 
-        // Add our own CSP
         responseHeaders.set("Content-Security-Policy", "frame-ancestors *; upgrade-insecure-requests;");
 
 
@@ -400,7 +398,7 @@ export default {
           return new Response(res.body, {
             status: res.status,
             statusText: res.statusText,
-            headers: responseHeaders, // Use modified headers
+            headers: responseHeaders, 
           });
         }
 
@@ -412,7 +410,7 @@ export default {
                 linkUrl.startsWith("mailto:") ||
                 linkUrl.startsWith("javascript:") ||
                 linkUrl.startsWith("data:") ||
-                linkUrl.startsWith("blob:") // Allow blob URLs as they are same-origin
+                linkUrl.startsWith("blob:") 
             ) {
                 return linkUrl;
             }
@@ -424,16 +422,13 @@ export default {
             }
         };
         
-        // Remove integrity and nonce attributes first
         html = html.replace(/\s+integrity=["'][^"']*["']/gi, "");
         html = html.replace(/\s+nonce=["'][^"']*["']/gi, "");
 
-        // Rewrite attributes like href, src, action, poster, data, formaction, background, cite
         html = html.replace(/(href|src|action|poster|data|formaction|background|cite)=["'](.*?)["']/gi, (match, attr, link) => {
           return `${attr}="${resolveAndProxyUrl(link, targetUrl)}"`;
         });
 
-        // Rewrite URLs in inline style="..." attributes
         html = html.replace(/style=(["'])([^"']+?)\1/gi, (match, quote, styleContent) => {
             const newStyleContent = styleContent.replace(/url\s*\(\s*['"]?(.*?)['"]?\s*\)/gi, (urlMatch: string, assetUrl: string) => {
                 return `url('${resolveAndProxyUrl(assetUrl, targetUrl)}')`;
@@ -441,7 +436,6 @@ export default {
             return `style=${quote}${newStyleContent}${quote}`;
         });
         
-        // Rewrite URLs in <style>...</style> tags
         html = html.replace(/<style([^>]*)>([\s\S]*?)<\/style>/gi, (match, styleAttrs, styleContent) => {
             let newStyleContent = styleContent.replace(/@import\s+['"](.*?)['"]/gi, (_: string, importUrl: string) => {
                 return `@import "${resolveAndProxyUrl(importUrl, targetUrl)}"`;
@@ -452,7 +446,6 @@ export default {
             return `<style${styleAttrs}>${newStyleContent}</style>`;
         });
 
-        // Rewrite srcset attributes
         html = html.replace(/srcset=["'](.*?)["']/gi, (match, srcsetLinks) => {
             const newSrcset = srcsetLinks.split(',').map(part => {
                 const item = part.trim().split(/\s+/);
@@ -485,7 +478,7 @@ export default {
         return new Response(html, {
           status: res.status,
           statusText: res.statusText,
-          headers: responseHeaders, // Use modified headers
+          headers: responseHeaders, 
         });
 
     } catch (e: any) {
