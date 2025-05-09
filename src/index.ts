@@ -120,7 +120,7 @@ export default {
       </form>
       <button id="openInNewTabBrowserView" title="Open current page in new tab" class="browser-control-button p-2 bg-gray-700 hover:bg-gray-600 rounded-md text-gray-300 transition-colors">↗️</button>
     </div>
-    <iframe id="contentFrame" src="about:blank"></iframe>
+    <iframe id="contentFrame" src="about:blank" sandbox="allow-forms allow-modals allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts allow-top-navigation allow-top-navigation-by-user-activation"></iframe>
   </div>
 
 <script>
@@ -251,10 +251,8 @@ export default {
 
   contentFrame.addEventListener('load', () => {
     const currentLoadedProxiedUrl = contentFrame.src;
+    // Avoid processing if it's not a proxied URL or about:blank
     if (currentLoadedProxiedUrl === 'about:blank' || !currentLoadedProxiedUrl.startsWith(window.location.origin + '/?q=')) {
-        if (currentLoadedProxiedUrl === 'about:blank') {
-            // urlBarBrowserView.value = ''; 
-        }
         updateNavButtons(); 
         return;
     }
@@ -264,6 +262,7 @@ export default {
         const frameUrl = new URL(currentLoadedProxiedUrl, window.location.origin); 
         displayedQuery = frameUrl.searchParams.get('q') || '';
     } catch (e) {
+        // Fallback parsing if URL constructor fails (should be rare with full URLs)
         const qIndex = currentLoadedProxiedUrl.indexOf('/?q=');
         if (qIndex !== -1) {
             displayedQuery = decodeURIComponent(currentLoadedProxiedUrl.substring(qIndex + 5));
@@ -271,15 +270,18 @@ export default {
     }
     urlBarBrowserView.value = displayedQuery;
     
+    // Update history only if the loaded URL is genuinely new and different from the current history top.
     if (historyStack[historyIndex] !== currentLoadedProxiedUrl) {
         if (historyIndex < historyStack.length - 1) { 
             historyStack = historyStack.slice(0, historyIndex + 1);
         }
+        // Check if it's a distinct navigation, not just a reload of the same page
         if (historyStack.length === 0 || historyStack[historyStack.length -1] !== currentLoadedProxiedUrl) {
              historyStack.push(currentLoadedProxiedUrl);
              historyIndex = historyStack.length - 1;
         } else if (historyStack[historyStack.length -1] === currentLoadedProxiedUrl && historyIndex !== historyStack.length -1) {
-            historyIndex = historyStack.indexOf(currentLoadedProxiedUrl);
+            // This case handles if we went back, and then the 'load' event fires for that page again.
+            historyIndex = historyStack.indexOf(currentLoadedProxiedUrl); // Point historyIndex to the reloaded page
         }
     }
     updateNavButtons();
@@ -292,7 +294,9 @@ export default {
     if (!browserViewSection.classList.contains('hidden')) {
       const controlsHeight = browserControls.offsetHeight;
       const marginBottomControls = parseInt(window.getComputedStyle(browserControls).marginBottom);
-      contentFrame.style.height = \`calc(100vh - \${controlsHeight + marginBottomControls}px - \${parseInt(window.getComputedStyle(document.body).paddingTop) * 2}px)\`;
+      // Consider body padding as well for accurate calculation
+      const bodyVerticalPadding = parseInt(window.getComputedStyle(document.body).paddingTop) + parseInt(window.getComputedStyle(document.body).paddingBottom);
+      contentFrame.style.height = \`calc(100vh - \${controlsHeight + marginBottomControls + bodyVerticalPadding}px)\`;
     }
   });
   resizeObserver.observe(browserControls);
@@ -318,24 +322,26 @@ export default {
       );
     }
 
-    // Server-side proxy logic (if query is present)
+    // Server-side proxy logic
     const isProbablyUrl = /^(https?:\/\/)?[a-zA-Z0-9.-]+\.[a-z]{2,}(\S*)?$/.test(query); 
+    let targetUrlString = query;
 
-    let targetUrl: string;
     if (isProbablyUrl) {
-      targetUrl = query.startsWith("http://") || query.startsWith("https://") ? query : `https://${query}`;
+      targetUrlString = query.startsWith("http://") || query.startsWith("https://") ? query : `https://${query}`;
     } else {
-      targetUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
+      targetUrlString = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
     }
 
     try {
-        const res = await fetch(targetUrl, {
+        const targetUrl = new URL(targetUrlString); // Use URL object for easier origin access
+
+        const res = await fetch(targetUrl.toString(), {
           method: "GET",
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
             "Accept-Language": "en-US,en;q=0.9",
-            "Referer": new URL(targetUrl).origin + '/', 
+            "Referer": targetUrl.origin + '/', 
           },
         });
 
@@ -351,75 +357,72 @@ export default {
         let html = await res.text();
         const baseProxyUrl = `${url.protocol}//${url.host}/?q=`;
 
-        html = html.replace(/(href|src|action)=["'](.*?)["']/gi, (match, attr, link) => {
-          if (
-            link.startsWith("#") ||
-            link.startsWith("mailto:") ||
-            link.startsWith("javascript:") ||
-            link.startsWith("data:")
-          ) {
-            return match;
-          }
-
-          let newUrlStr = link;
-          try {
-            const absoluteUrl = new URL(link, targetUrl).toString();
-            newUrlStr = absoluteUrl;
-          } catch (_) {
-            //
-          }
-          return `${attr}="${baseProxyUrl}${encodeURIComponent(newUrlStr)}"`;
+        // Function to resolve a URL against the target page's URL and then proxy it
+        const resolveAndProxyUrl = (linkUrl: string, base: URL): string => {
+            if (
+                linkUrl.startsWith("#") ||
+                linkUrl.startsWith("mailto:") ||
+                linkUrl.startsWith("javascript:") || // Be cautious with JS links
+                linkUrl.startsWith("data:")
+            ) {
+                return linkUrl;
+            }
+            try {
+                const absoluteUrl = new URL(linkUrl, base).toString();
+                return `${baseProxyUrl}${encodeURIComponent(absoluteUrl)}`;
+            } catch (_) {
+                // If it's a malformed URL or some other scheme, try to proxy as is, or return original
+                return `${baseProxyUrl}${encodeURIComponent(linkUrl)}`; 
+            }
+        };
+        
+        // Rewrite attributes like href, src, action, poster, data
+        html = html.replace(/(href|src|action|poster|data)=["'](.*?)["']/gi, (match, attr, link) => {
+          return `${attr}="${resolveAndProxyUrl(link, targetUrl)}"`;
         });
 
+        // Rewrite URLs in CSS url(...)
         html = html.replace(/url\s*\(\s*['"]?(.*?)['"]?\s*\)/gi, (match, assetUrl) => {
-          if (assetUrl.startsWith("data:") || assetUrl.startsWith("#")) return match;
-
-          let newAssetUrlStr = assetUrl;
-          try {
-            const absoluteAssetUrl = new URL(assetUrl, targetUrl).toString();
-            newAssetUrlStr = absoluteAssetUrl;
-          } catch (_) {
-            //
-          }
-          return `url('${baseProxyUrl}${encodeURIComponent(newAssetUrlStr)}')`;
+          return `url('${resolveAndProxyUrl(assetUrl, targetUrl)}')`;
         });
         
+        // Rewrite CSS @import "..."
+        html = html.replace(/@import\s+['"](.*?)['"]/gi, (match, importUrl) => {
+            return `@import "${resolveAndProxyUrl(importUrl, targetUrl)}"`;
+        });
+
+        // Rewrite srcset attributes
         html = html.replace(/srcset=["'](.*?)["']/gi, (match, srcsetLinks) => {
             const newSrcset = srcsetLinks.split(',').map(part => {
                 const item = part.trim().split(/\s+/);
                 if (item.length > 0 && item[0]) {
-                    let newUrl = item[0];
-                    try {
-                        newUrl = new URL(item[0], targetUrl).toString();
-                    } catch (_) {}
-                    item[0] = `${baseProxyUrl}${encodeURIComponent(newUrl)}`;
+                    item[0] = resolveAndProxyUrl(item[0], targetUrl);
                 }
                 return item.join(' ');
             }).join(', ');
             return `srcset="${newSrcset}"`;
         });
 
-
+        // Remove meta refresh tags that might redirect away
         html = html.replace(/<meta[^>]+http-equiv=["']refresh["'][^>]*>/gi, "");
 
-        let baseHrefForTag = targetUrl;
+        // Inject a <base> tag. The base href should be the proxied version of the *directory* of the target URL.
+        let effectiveBaseHref;
         try {
-            const targetBase = new URL(targetUrl);
-            baseHrefForTag = targetBase.origin + (targetBase.pathname.endsWith('/') ? targetBase.pathname : targetBase.pathname + '/');
-        } catch(_) { 
-          // use targetUrl as is if parsing fails
+            // Get the URL as if resolving '.' relative to the target URL.
+            // This correctly handles cases where targetUrl is a file (e.g., page.html) or a directory.
+            effectiveBaseHref = new URL('.', targetUrl).href;
+        } catch {
+            effectiveBaseHref = targetUrl.toString(); // Fallback
         }
-
-        const proxiedBaseHref = `${baseProxyUrl}${encodeURIComponent(baseHrefForTag)}`;
+        const proxiedBaseForTag = `${baseProxyUrl}${encodeURIComponent(effectiveBaseHref)}`;
 
         if (!/<head[^>]*>/i.test(html)) {
-            html = "<head></head>" + html;
+            html = "<head></head>" + html; // Ensure head exists
         }
-        if (html.includes("<base")) {
-             html = html.replace(/<base[^>]*>/i, `<base href="${proxiedBaseHref}">`);
-        } else {
-             html = html.replace(/<head[^>]*>/i, `$&<base href="${proxiedBaseHref}">`);
-        }
+        // Remove any existing base tag first, then add ours.
+        html = html.replace(/<base[^>]*>/gi, ""); 
+        html = html.replace(/<head[^>]*>/i, `$&<base href="${proxiedBaseForTag}">`);
 
 
         return new Response(html, {
@@ -427,12 +430,14 @@ export default {
           headers: {
             "Content-Type": "text/html; charset=UTF-8",
             "Content-Security-Policy": "frame-ancestors *; upgrade-insecure-requests;", 
-            "X-Frame-Options": "", 
+            "X-Frame-Options": "", // Allow framing
           },
         });
 
     } catch (e: any) {
-        return new Response(`Error fetching or processing URL: ${e.message} for target: ${targetUrl}`, { status: 500 });
+        // Ensure targetUrlString is defined for the error message
+        const displayUrl = targetUrlString || query;
+        return new Response(`Error fetching or processing URL: ${e.message} for target: ${displayUrl}`, { status: 500 });
     }
   },
 };
